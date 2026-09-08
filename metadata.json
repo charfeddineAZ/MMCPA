@@ -1,0 +1,6 @@
+{
+  "name": "CPA Automator",
+  "description": "Automated CPA campaign manager with smart browser filling, proxy rotation, identity generation, and lead verification.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
