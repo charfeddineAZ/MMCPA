@@ -7,6 +7,7 @@ import androidx.room.RoomDatabase
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.data.model.CampaignStat
 import com.example.data.model.EmailItem
+import com.example.data.model.ProxyItem
 import com.example.data.model.ScriptItem
 import com.example.data.model.TaskEntity
 import kotlinx.coroutines.CoroutineScope
@@ -15,8 +16,8 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 @Database(
-    entities = [TaskEntity::class, EmailItem::class, ScriptItem::class, CampaignStat::class],
-    version = 1,
+    entities = [TaskEntity::class, EmailItem::class, ScriptItem::class, CampaignStat::class, ProxyItem::class],
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -24,6 +25,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun emailDao(): EmailDao
     abstract fun scriptDao(): ScriptDao
     abstract fun leadLogDao(): LeadLogDao
+    abstract fun proxyDao(): ProxyDao
 
     companion object {
         @Volatile
@@ -36,6 +38,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "cpa_automator_db"
                 )
+                .fallbackToDestructiveMigration()
                 .addCallback(DatabaseCallback())
                 .build()
                 INSTANCE = instance
@@ -66,7 +69,8 @@ abstract class AppDatabase : RoomDatabase() {
                     mode = "mode1",
                     repeatCount = 3,
                     browserDuration = 45,
-                    mode1RepeatCount = 3
+                    mode1RepeatCount = 3,
+                    categories = "Email Submit, Survey / Quiz, Terms Agreement"
                 ),
                 TaskEntity(
                     id = UUID.randomUUID().toString(),
@@ -76,7 +80,8 @@ abstract class AppDatabase : RoomDatabase() {
                     userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Mobile/15E148 Safari/604.1",
                     mode = "mode3",
                     repeatCount = 2,
-                    completionKeywords = "thank you, congratulations, welcome, completed, verified"
+                    completionKeywords = "thank you, congratulations, welcome, completed, verified",
+                    categories = "Sign Up, Lead Gen Form, Skip Upsells"
                 )
             )
             for (task in sampleTasks) {

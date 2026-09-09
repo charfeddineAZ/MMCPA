@@ -38,6 +38,8 @@ data class TaskEntity(
     val operationRepeatCount: Int = 1,
     // Mode 3 config
     val completionKeywords: String = "thank you, congratulations, success, completed, order received, confirmation",
+    // Intelligent Intent Categories (e.g. "Email Submit, Survey, Sign Up")
+    val categories: String = "Email Submit, Survey",
     val lastRunAt: Long? = null,
     val createdAt: Long = System.currentTimeMillis()
 )

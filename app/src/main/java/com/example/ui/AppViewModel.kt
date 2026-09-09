@@ -12,9 +12,11 @@ import com.example.data.model.EmailItem
 import com.example.data.model.ExtractedInfo
 import com.example.data.model.GeneratedIdentity
 import com.example.data.model.LogEntry
+import com.example.data.model.ProxyItem
 import com.example.data.model.ScriptItem
 import com.example.data.model.TaskEntity
 import com.example.service.IdentityService
+import com.example.service.TaskCategoryPlanner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -25,12 +27,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 enum class ScreenTab(val id: String, val title: String) {
     TASKS("tasks", "Tasks"),
     BROWSER("browser", "Browser"),
     INFO("info", "Identity"),
+    PROXIES("proxies", "Proxies"),
     SCRIPTS("scripts", "Scripts"),
     EMAILS("emails", "Emails"),
     STATS("stats", "Analytics"),
@@ -45,6 +49,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val emailDao = db.emailDao()
     private val scriptDao = db.scriptDao()
     private val leadLogDao = db.leadLogDao()
+    private val proxyDao = db.proxyDao()
 
     private val prefs = application.getSharedPreferences("cpa_automator_prefs", Context.MODE_PRIVATE)
 
@@ -82,6 +87,12 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     val emailCount: StateFlow<Int> = emailDao.getEmailCount()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
+    val proxies: StateFlow<List<ProxyItem>> = proxyDao.getAllProxies()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val proxyCount: StateFlow<Int> = proxyDao.getProxyCount()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
     val scripts: StateFlow<List<ScriptItem>> = scriptDao.getAllScripts()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -113,6 +124,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                     mode = "mode1",
                     repeatCount = 3,
                     browserDuration = 40,
+                    categories = "Email Submit, Survey / Quiz, Terms Agreement",
                     enabled = true
                 )
                 taskDao.insertTask(ctcTask)
@@ -202,6 +214,109 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             emailDao.clearAllEmails()
             addLog("warning", "Cleared email pool.")
+        }
+    }
+
+    // --- Proxy Pool Operations ---
+
+    fun fetchProxiesFromUrl(
+        url: String,
+        protocol: String = "socks5",
+        onResult: (Boolean, String, Int) -> Unit
+    ) {
+        viewModelScope.launch {
+            addLog("info", "Fetching proxies from URL: $url")
+            val result = IdentityService.fetchProxiesFromUrl(url, protocol)
+            if (result.isSuccess) {
+                val list = result.getOrNull() ?: emptyList()
+                withContext(Dispatchers.IO) {
+                    proxyDao.insertProxies(list)
+                }
+                val s = _settings.value
+                if (list.isNotEmpty() && (s.proxyHost.isBlank() || s.proxyListUrl != url)) {
+                    val first = list.first()
+                    updateSettings(
+                        s.copy(
+                            proxyListUrl = url,
+                            proxyHost = if (s.proxyHost.isBlank()) first.host else s.proxyHost,
+                            proxyPort = if (s.proxyPort.isBlank()) first.port.toString() else s.proxyPort,
+                            proxyType = if (s.proxyType == "none") first.type else s.proxyType
+                        )
+                    )
+                }
+                addLog("success", "Successfully loaded ${list.size} proxies from URL into pool.")
+                onResult(true, "Successfully imported ${list.size} proxies", list.size)
+            } else {
+                val err = result.exceptionOrNull()?.localizedMessage ?: "Unknown error fetching proxies"
+                addLog("error", "Failed to fetch proxies: $err")
+                onResult(false, err, 0)
+            }
+        }
+    }
+
+    fun importProxiesBulk(raw: String, protocol: String = "socks5", onResult: ((Int) -> Unit)? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val list = IdentityService.parseBulkProxies(raw, protocol)
+            if (list.isNotEmpty()) {
+                proxyDao.insertProxies(list)
+                addLog("success", "Imported ${list.size} proxies into pool.")
+                onResult?.invoke(list.size)
+            } else {
+                onResult?.invoke(0)
+            }
+        }
+    }
+
+    fun addSingleProxy(proxy: ProxyItem) {
+        viewModelScope.launch(Dispatchers.IO) {
+            proxyDao.insertProxy(proxy)
+            addLog("info", "Added proxy: ${proxy.host}:${proxy.port} [${proxy.type.uppercase()}]")
+        }
+    }
+
+    fun deleteProxy(proxy: ProxyItem) {
+        viewModelScope.launch(Dispatchers.IO) {
+            proxyDao.deleteProxy(proxy)
+            addLog("info", "Deleted proxy: ${proxy.host}:${proxy.port}")
+        }
+    }
+
+    fun clearAllProxies() {
+        viewModelScope.launch(Dispatchers.IO) {
+            proxyDao.clearAllProxies()
+            addLog("warning", "Cleared all proxies from pool.")
+        }
+    }
+
+    fun setActiveProxy(proxy: ProxyItem) {
+        val s = _settings.value.copy(
+            proxyType = proxy.type,
+            proxyHost = proxy.host,
+            proxyPort = proxy.port.toString(),
+            proxyUser = proxy.username,
+            proxyPass = proxy.password
+        )
+        updateSettings(s)
+        addLog("success", "Switched active proxy to ${proxy.host}:${proxy.port} (${proxy.type.uppercase()})")
+        refreshGeoInfo()
+    }
+
+    fun testProxy(proxy: ProxyItem, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val startTime = System.currentTimeMillis()
+            val geo = IdentityService.fetchGeoInfo(proxy.host, proxy.port, proxy.type)
+            val ping = System.currentTimeMillis() - startTime
+            val isWorking = geo.isProxy || geo.ip.isNotBlank()
+            withContext(Dispatchers.IO) {
+                proxyDao.updateProxyStatus(proxy.id, if (isWorking) "working" else "failed", ping)
+            }
+            if (isWorking) {
+                addLog("success", "Proxy ${proxy.host}:${proxy.port} working! IP: ${geo.ip} (${geo.city}, ${geo.country}) - ${ping}ms")
+                onResult(true, "Working: ${geo.ip} (${geo.city}, ${geo.countryCode}) - ${ping}ms")
+            } else {
+                addLog("error", "Proxy ${proxy.host}:${proxy.port} test failed")
+                onResult(false, "Connection failed or timeout")
+            }
         }
     }
 
@@ -380,7 +495,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         phaseDetail = "Task finished.",
                         currentTaskId = null,
                         currentTaskName = null,
-                        currentUrl = null
+                        currentUrl = null,
+                        activeTaskCategories = "",
+                        activePlanSummary = ""
                     )
                 }
             }
@@ -459,7 +576,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
                         phaseDetail = "Automation stopped.",
                         currentTaskId = null,
                         currentTaskName = null,
-                        currentUrl = null
+                        currentUrl = null,
+                        activeTaskCategories = "",
+                        activePlanSummary = ""
                     )
                 }
                 addLog("info", "Automation campaign stopped.")
@@ -469,20 +588,39 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun runSingleTask(task: TaskEntity) {
         taskDao.updateTaskStatus(task.id, "running")
+        val parsedCats = TaskCategoryPlanner.parseCategories(task.categories)
+        val planSummary = TaskCategoryPlanner.formatPlanSummary(parsedCats)
         _automationState.update {
             it.copy(
                 currentTaskId = task.id,
                 currentTaskName = task.name,
                 currentUrl = task.url,
+                activeTaskCategories = task.categories,
+                activePlanSummary = planSummary,
                 phase = "preparing",
-                phaseDetail = "Preparing ${task.name}"
+                phaseDetail = "AI Funnel: $planSummary"
             )
         }
-        addLog("info", "--- Starting task: ${task.name} [Mode: ${task.mode}] ---", task.name)
+        addLog("info", "--- Starting task: ${task.name} [Funnel: $planSummary] ---", task.name)
 
         // 1. Proxy & Geo Info
         _automationState.update { it.copy(phase = "fetching_geo", phaseDetail = "Updating IP & Geo info...") }
-        val s = _settings.value
+        var s = _settings.value
+        if (s.proxyAutoRotate) {
+            val nextProxy = proxyDao.getNextProxy()
+            if (nextProxy != null) {
+                proxyDao.markProxyUsed(nextProxy.id)
+                s = s.copy(
+                    proxyType = nextProxy.type,
+                    proxyHost = nextProxy.host,
+                    proxyPort = nextProxy.port.toString(),
+                    proxyUser = nextProxy.username,
+                    proxyPass = nextProxy.password
+                )
+                _settings.value = s
+                addLog("info", "🔄 Rotated IP using proxy: ${nextProxy.host}:${nextProxy.port} [${nextProxy.type.uppercase()}]", task.name)
+            }
+        }
         val port = s.proxyPort.toIntOrNull()
         val geo = IdentityService.fetchGeoInfo(s.proxyHost, port, s.proxyType)
         _extractedInfo.value = geo

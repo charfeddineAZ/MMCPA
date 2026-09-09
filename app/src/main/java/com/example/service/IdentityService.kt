@@ -2,6 +2,7 @@ package com.example.service
 
 import com.example.data.model.ExtractedInfo
 import com.example.data.model.GeneratedIdentity
+import com.example.data.model.ProxyItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -389,6 +390,105 @@ object IdentityService {
             }
         } catch (e: Exception) {
             Pair(false, "Check lead failed: ${e.localizedMessage}")
+        }
+    }
+
+    const val DEFAULT_ASOCKS_URL = "https://asocks-list.org/whitelist/1Zh8csccp9pRSEb2oISMGTsy9LEdYDCk.txt?limit=100&type=res&country=US"
+
+    fun parseProxyLine(line: String, defaultType: String = "socks5"): ProxyItem? {
+        var clean = line.trim()
+        if (clean.isEmpty() || clean.startsWith("#") || clean.startsWith("//")) return null
+
+        var type = defaultType
+        if (clean.startsWith("socks5://", ignoreCase = true)) {
+            type = "socks5"
+            clean = clean.substring("socks5://".length)
+        } else if (clean.startsWith("socks4://", ignoreCase = true)) {
+            type = "socks4"
+            clean = clean.substring("socks4://".length)
+        } else if (clean.startsWith("http://", ignoreCase = true)) {
+            type = "http"
+            clean = clean.substring("http://".length)
+        } else if (clean.startsWith("https://", ignoreCase = true)) {
+            type = "http"
+            clean = clean.substring("https://".length)
+        }
+
+        // Format: user:pass@host:port
+        if (clean.contains("@")) {
+            val atParts = clean.split("@")
+            val authPart = atParts[0]
+            val hostPart = atParts.getOrNull(1) ?: return null
+
+            val authTokens = authPart.split(":")
+            val user = authTokens.getOrElse(0) { "" }
+            val pass = authTokens.getOrElse(1) { "" }
+
+            val hostTokens = hostPart.split(":")
+            val host = hostTokens.getOrElse(0) { "" }.trim()
+            val port = hostTokens.getOrNull(1)?.filter { it.isDigit() }?.toIntOrNull() ?: return null
+            if (host.isEmpty()) return null
+            return ProxyItem(host = host, port = port, type = type, username = user, password = pass)
+        }
+
+        // Format: host:port:user:pass or host:port
+        val tokens = clean.split(":")
+        if (tokens.size >= 2) {
+            val host = tokens[0].trim()
+            val port = tokens[1].trim().filter { it.isDigit() }.toIntOrNull() ?: return null
+            val user = tokens.getOrNull(2)?.trim() ?: ""
+            val pass = tokens.getOrNull(3)?.trim() ?: ""
+            if (host.isEmpty()) return null
+            return ProxyItem(host = host, port = port, type = type, username = user, password = pass)
+        }
+
+        return null
+    }
+
+    fun parseBulkProxies(text: String, defaultType: String = "socks5"): List<ProxyItem> {
+        val lines = text.split("\n", "\r\n", ";")
+        val result = mutableListOf<ProxyItem>()
+        for (line in lines) {
+            val p = parseProxyLine(line, defaultType)
+            if (p != null) {
+                result.add(p)
+            }
+        }
+        return result
+    }
+
+    suspend fun fetchProxiesFromUrl(url: String, defaultType: String = "socks5"): Result<List<ProxyItem>> = withContext(Dispatchers.IO) {
+        try {
+            val targetUrl = url.trim()
+            if (targetUrl.isEmpty()) {
+                return@withContext Result.failure(IllegalArgumentException("URL is empty"))
+            }
+
+            val client = OkHttpClient.Builder()
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(15, TimeUnit.SECONDS)
+                .followRedirects(true)
+                .build()
+
+            val request = Request.Builder()
+                .url(targetUrl)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                .build()
+
+            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) {
+                return@withContext Result.failure(Exception("HTTP Error ${response.code}: ${response.message}"))
+            }
+
+            val body = response.body?.string() ?: ""
+            val proxies = parseBulkProxies(body, defaultType)
+            if (proxies.isEmpty()) {
+                return@withContext Result.failure(Exception("No valid proxies could be parsed from response"))
+            }
+
+            Result.success(proxies)
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 }

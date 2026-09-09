@@ -8,6 +8,7 @@ import androidx.room.Query
 import androidx.room.Update
 import com.example.data.model.CampaignStat
 import com.example.data.model.EmailItem
+import com.example.data.model.ProxyItem
 import com.example.data.model.ScriptItem
 import com.example.data.model.TaskEntity
 import kotlinx.coroutines.flow.Flow
@@ -106,4 +107,43 @@ interface LeadLogDao {
 
     @Query("DELETE FROM lead_logs")
     suspend fun clearAllLogs()
+}
+
+@Dao
+interface ProxyDao {
+    @Query("SELECT * FROM proxies ORDER BY id DESC")
+    fun getAllProxies(): Flow<List<ProxyItem>>
+
+    @Query("SELECT COUNT(*) FROM proxies")
+    fun getProxyCount(): Flow<Int>
+
+    @Query("SELECT * FROM proxies ORDER BY lastUsedAt ASC LIMIT 1")
+    suspend fun getNextProxy(): ProxyItem?
+
+    @Query("SELECT * FROM proxies WHERE id = :id LIMIT 1")
+    suspend fun getProxyById(id: Long): ProxyItem?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertProxies(proxies: List<ProxyItem>)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertProxy(proxy: ProxyItem)
+
+    @Update
+    suspend fun updateProxy(proxy: ProxyItem)
+
+    @Delete
+    suspend fun deleteProxy(proxy: ProxyItem)
+
+    @Query("DELETE FROM proxies WHERE id = :id")
+    suspend fun deleteProxyById(id: Long)
+
+    @Query("DELETE FROM proxies")
+    suspend fun clearAllProxies()
+
+    @Query("UPDATE proxies SET lastUsedAt = :timestamp WHERE id = :id")
+    suspend fun markProxyUsed(id: Long, timestamp: Long = System.currentTimeMillis())
+
+    @Query("UPDATE proxies SET status = :status, lastPingMs = :ping WHERE id = :id")
+    suspend fun updateProxyStatus(id: Long, status: String, ping: Long)
 }

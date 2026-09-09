@@ -21,6 +21,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -56,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.AutomationState
 import com.example.data.model.TaskEntity
+import com.example.service.TaskCategoryPlanner
 import com.example.ui.components.AddTaskDialog
 import com.example.ui.theme.CpaAccent
 import com.example.ui.theme.CpaAccentDim
@@ -344,6 +346,46 @@ fun TaskCard(
                         color = CpaTextMuted,
                         fontSize = 10.sp,
                         fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
+
+            // AI Intent & Funnel Categories
+            val parsedCats = TaskCategoryPlanner.parseCategories(task.categories)
+            val orderedSteps = TaskCategoryPlanner.orderCategories(parsedCats)
+            if (orderedSteps.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(CpaPrimaryDim)
+                        .border(1.dp, CpaPrimaryBorder, RoundedCornerShape(6.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.AutoAwesome,
+                        contentDescription = "AI Funnel",
+                        tint = CpaPrimary,
+                        modifier = Modifier.size(12.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "AI Funnel:",
+                        color = CpaPrimary,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = orderedSteps.joinToString(" ➔ ") { "${it.order}.${it.emoji} ${it.labelEn}" },
+                        color = CpaText,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }

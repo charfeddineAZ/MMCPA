@@ -76,7 +76,8 @@ true;
         """.trimIndent()
     }
 
-    fun buildSmartFormFillScript(identity: GeneratedIdentity): String {
+    fun buildSmartFormFillScript(identity: GeneratedIdentity, categories: String = ""): String {
+        val planJson = TaskCategoryPlanner.buildPlanJson(TaskCategoryPlanner.parseCategories(categories))
         val identityJson = JSONObject().apply {
             put("firstName", identity.firstName)
             put("lastName", identity.lastName)
@@ -98,6 +99,7 @@ true;
         return """
 (function() {
   window._cpaIdentity = $identityJson;
+  window._cpaCategoryPlan = $planJson;
   window._cpaAnsweredQuestions = window._cpaAnsweredQuestions || {};
 
   function logCpa(msg) {
@@ -581,25 +583,76 @@ true;
     return false;
   }
 
+  function handleSkipUpsells() {
+    var skipKeywords = ['no thanks', 'skip', 'not interested', 'no thank you', 'skip this offer', 'continue without offer', 'decline', 'pass', 'maybe later'];
+    var clickableElements = Array.from(document.querySelectorAll('a, button, input[type=button], span[role=button], div[role=button]'));
+    for (var i = 0; i < clickableElements.length; i++) {
+      var el = clickableElements[i];
+      if (el.offsetParent === null) continue;
+      var text = (el.innerText || el.textContent || el.getAttribute('aria-label') || el.value || '').toLowerCase().trim();
+      if (skipKeywords.some(function(kw) { return text === kw || text.indexOf(kw) !== -1; })) {
+        logCpa('Smart Upsell Skipped: "' + text.slice(0, 30) + '"');
+        showFloatingBadge('⏭️ Skipped Offer');
+        triggerClick(el);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function handleSignUpFields(ident) {
+    var pwInputs = Array.from(document.querySelectorAll('input[type=password]'));
+    var filledPw = 0;
+    if (pwInputs.length > 0) {
+      var generatedPassword = 'CpaPass@' + (ident.firstName || 'User') + '2026!';
+      pwInputs.forEach(function(pw) {
+        if (!pw.value || pw.value.trim().length === 0) {
+          setNativeValue(pw, generatedPassword);
+          filledPw++;
+        }
+      });
+      if (filledPw > 0) {
+        logCpa('Sign Up: Generated and filled secure password for ' + filledPw + ' fields');
+        showFloatingBadge('👤 Sign Up Password Filled');
+      }
+    }
+    return filledPw;
+  }
+
   // --- Main Execution Cycle ---
 
   window._cpaExecuteCycle = function() {
     var ident = window._cpaIdentity;
     if (!ident) return;
 
+    var plan = window._cpaCategoryPlan || [];
+    var hasSkipPlan = plan.some(function(p) { return p.id === 'skip_upsells'; });
+    var hasSignUpPlan = plan.some(function(p) { return p.id === 'sign_up'; });
+    var hasSurveyPlan = plan.some(function(p) { return p.id === 'survey_quiz'; });
+
+    // 0. Handle Skip Upsells if present on page
+    if (hasSkipPlan || plan.length === 0) {
+      if (handleSkipUpsells()) return;
+    }
+
     // 1. Fill Text / Contact Inputs
     var filled = fillInputFields();
 
-    // 2. Check Terms / Consent Checkboxes
+    // 2. Handle Password / Sign Up credentials if required
+    if (hasSignUpPlan || document.querySelector('input[type=password]')) {
+      filled += handleSignUpFields(ident);
+    }
+
+    // 3. Check Terms / Consent Checkboxes
     var checked = handleCheckboxes();
 
-    // 3. Handle Radio Button Surveys
+    // 4. Handle Radio Button Surveys
     var radios = handleRadioSurveys(ident);
 
-    // 4. Handle Dropdown Surveys
+    // 5. Handle Dropdown Surveys
     var selects = handleSelectSurveys(ident);
 
-    // 5. Handle Button / Card / Tile Surveys
+    // 6. Handle Button / Card / Tile Surveys
     var buttonSurveyHandled = handleButtonSurveys(ident);
 
     if (filled > 0 || checked > 0 || radios > 0 || selects > 0) {

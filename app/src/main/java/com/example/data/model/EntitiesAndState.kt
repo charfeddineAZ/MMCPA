@@ -10,6 +10,21 @@ data class EmailItem(
     val addedAt: Long = System.currentTimeMillis()
 )
 
+@Entity(tableName = "proxies")
+data class ProxyItem(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val host: String,
+    val port: Int,
+    val type: String = "socks5", // http, socks4, socks5
+    val username: String = "",
+    val password: String = "",
+    val country: String = "US",
+    val status: String = "active", // active, working, failed
+    val lastPingMs: Long = 0L,
+    val lastUsedAt: Long = 0L,
+    val addedAt: Long = System.currentTimeMillis()
+)
+
 @Entity(tableName = "scripts")
 data class ScriptItem(
     @PrimaryKey val id: String,
@@ -48,6 +63,8 @@ data class AutomationState(
     val currentTaskId: String? = null,
     val currentTaskName: String? = null,
     val currentUrl: String? = null,
+    val activeTaskCategories: String = "",
+    val activePlanSummary: String = "",
     val activeIp: String = "Not Connected",
     val isRunning: Boolean = false,
     val loopCount: Int = 0,

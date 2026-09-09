@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -18,6 +20,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Link
@@ -53,6 +58,7 @@ import androidx.compose.ui.window.Dialog
 import com.example.data.model.TaskEntity
 import com.example.data.model.TaskMode
 import com.example.service.IdentityService
+import com.example.service.TaskCategoryPlanner
 import com.example.ui.theme.CpaAccent
 import com.example.ui.theme.CpaAccentDim
 import com.example.ui.theme.CpaBg
@@ -67,13 +73,14 @@ import com.example.ui.theme.CpaTextDim
 import com.example.ui.theme.CpaTextMuted
 import java.util.UUID
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AddTaskDialog(
     taskToEdit: TaskEntity?,
     onDismiss: () -> Unit,
     onSave: (TaskEntity) -> Unit
 ) {
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: Basic, 1: Mode, 2: Advanced
+    var selectedTab by remember { mutableIntStateOf(0) } // 0: Basic, 1: AI Funnel, 2: Mode, 3: Advanced
 
     var name by remember { mutableStateOf(taskToEdit?.name ?: "") }
     var url by remember { mutableStateOf(taskToEdit?.url ?: "") }
@@ -81,6 +88,13 @@ fun AddTaskDialog(
     var userAgent by remember { mutableStateOf(taskToEdit?.userAgent ?: IdentityService.USER_AGENTS[0].value) }
     var mode by remember { mutableStateOf(taskToEdit?.mode ?: TaskMode.MODE1.id) }
     var repeatCountStr by remember { mutableStateOf((taskToEdit?.repeatCount ?: 1).toString()) }
+
+    var categoriesList by remember {
+        mutableStateOf(
+            TaskCategoryPlanner.parseCategories(taskToEdit?.categories ?: "Email Submit, Survey / Quiz")
+        )
+    }
+    var customCategoryInput by remember { mutableStateOf("") }
 
     // Mode 1 config
     var browserDurationStr by remember { mutableStateOf((taskToEdit?.browserDuration ?: 45).toString()) }
@@ -141,7 +155,7 @@ fun AddTaskDialog(
                         .background(CpaCardElevated)
                         .padding(3.dp)
                 ) {
-                    listOf("Basic", "Mode", "Advanced").forEachIndexed { index, tabTitle ->
+                    listOf("Basic", "AI Funnel", "Mode", "Advanced").forEachIndexed { index, tabTitle ->
                         val isSelected = selectedTab == index
                         Box(
                             modifier = Modifier
@@ -155,7 +169,7 @@ fun AddTaskDialog(
                             Text(
                                 text = tabTitle,
                                 color = if (isSelected) CpaPrimary else CpaTextMuted,
-                                fontSize = 12.sp,
+                                fontSize = 11.sp,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                             )
                         }
@@ -270,7 +284,241 @@ fun AddTaskDialog(
                             ),
                             modifier = Modifier.fillMaxWidth()
                         )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text("AI INTENT & FUNNEL", color = CpaTextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(CpaCardElevated)
+                                .border(1.dp, CpaBorder, RoundedCornerShape(8.dp))
+                                .clickable { selectedTab = 1 }
+                                .padding(10.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.AutoAwesome, contentDescription = "AI Funnel", tint = CpaPrimary, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (categoriesList.isEmpty()) "No categories selected" else TaskCategoryPlanner.formatPlanSummary(categoriesList),
+                                    color = CpaPrimary,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text("Configure ➔", color = CpaTextDim, fontSize = 10.sp)
+                            }
+                        }
                     } else if (selectedTab == 1) {
+                        // AI FUNNEL & CATEGORIES TAB
+                        Text("AI INTENT CATEGORIES (تصنيفات فهم المهمة)", color = CpaPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "أضف تصنيفات للمهمة (مثل Sign Up، Survey، Email). يقوم الذكاء الاصطناعي بفهم المطلوب وترتيب خطوات المسار تلقائياً.",
+                            color = CpaTextMuted,
+                            fontSize = 11.sp
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Preset Category Selection Chips
+                        Text("PRESET ACTIONS (تصنيفات سريعة)", color = CpaTextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        Spacer(modifier = Modifier.height(6.dp))
+
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            TaskCategoryPlanner.PRESET_CATEGORIES.forEach { def ->
+                                val isSelected = categoriesList.any {
+                                    it.equals(def.labelEn, ignoreCase = true) || it.equals(def.id, ignoreCase = true) || it.equals(def.labelAr, ignoreCase = true)
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(if (isSelected) CpaPrimaryDim else CpaCardElevated)
+                                        .border(
+                                            1.dp,
+                                            if (isSelected) CpaPrimary else CpaBorder,
+                                            RoundedCornerShape(6.dp)
+                                        )
+                                        .clickable {
+                                            categoriesList = if (isSelected) {
+                                                categoriesList.filterNot {
+                                                    it.equals(def.labelEn, ignoreCase = true) || it.equals(def.id, ignoreCase = true) || it.equals(def.labelAr, ignoreCase = true)
+                                                }
+                                            } else {
+                                                categoriesList + def.labelEn
+                                            }
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(def.emoji, fontSize = 12.sp)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = def.labelEn,
+                                            color = if (isSelected) CpaPrimary else CpaText,
+                                            fontSize = 11.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                                        )
+                                        if (isSelected) {
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Icon(
+                                                Icons.Default.Check,
+                                                contentDescription = "Selected",
+                                                tint = CpaPrimary,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Add Custom Category
+                        Text("ADD CUSTOM CATEGORY (إضافة تصنيف مخصص)", color = CpaTextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = customCategoryInput,
+                                onValueChange = { customCategoryInput = it },
+                                placeholder = { Text("e.g. sin up, mobile install, pin...", color = CpaTextDim, fontSize = 11.sp) },
+                                singleLine = true,
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = CpaPrimary,
+                                    unfocusedBorderColor = CpaBorder,
+                                    focusedTextColor = CpaText,
+                                    unfocusedTextColor = CpaText
+                                ),
+                                modifier = Modifier.weight(1f)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                onClick = {
+                                    val trimmed = customCategoryInput.trim()
+                                    if (trimmed.isNotEmpty() && !categoriesList.any { it.equals(trimmed, ignoreCase = true) }) {
+                                        categoriesList = categoriesList + trimmed
+                                        customCategoryInput = ""
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = CpaPrimaryDim),
+                                shape = RoundedCornerShape(8.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, CpaPrimaryBorder)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = "Add", tint = CpaPrimary, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Add", color = CpaPrimary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Active Categories List
+                        Text("ACTIVE SELECTED CATEGORIES (${categoriesList.size})", color = CpaTextMuted, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        if (categoriesList.isEmpty()) {
+                            Text("No categories selected yet. Tap a preset above or add a custom one.", color = CpaTextDim, fontSize = 11.sp)
+                        } else {
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                categoriesList.forEach { cat ->
+                                    val def = TaskCategoryPlanner.findDefinition(cat)
+                                    val emoji = def?.emoji ?: "🎯"
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(CpaCardElevated)
+                                            .border(1.dp, CpaAccent.copy(alpha = 0.5f), RoundedCornerShape(6.dp))
+                                            .padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(emoji, fontSize = 11.sp)
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(cat, color = CpaText, fontSize = 11.sp, fontWeight = FontWeight.Medium)
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Icon(
+                                                Icons.Default.Close,
+                                                contentDescription = "Remove",
+                                                tint = CpaTextMuted,
+                                                modifier = Modifier
+                                                    .size(14.dp)
+                                                    .clickable {
+                                                        categoriesList = categoriesList.filterNot { it == cat }
+                                                    }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(14.dp))
+
+                        // Real-time AI Sequence & Funnel Order Explanation
+                        val orderedSteps = TaskCategoryPlanner.orderCategories(categoriesList)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(CpaPrimaryDim)
+                                .border(1.dp, CpaPrimaryBorder, RoundedCornerShape(8.dp))
+                                .padding(10.dp)
+                        ) {
+                            Column {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.AutoAwesome, contentDescription = "AI Plan", tint = CpaPrimary, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        "AI EXECUTION PIPELINE (ترتيب الذكاء التلقائي):",
+                                        color = CpaPrimary,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                if (orderedSteps.isEmpty()) {
+                                    Text("Select categories to see how AI arranges them in the conversion pipeline.", color = CpaTextDim, fontSize = 11.sp)
+                                } else {
+                                    orderedSteps.forEach { step ->
+                                        Row(
+                                            modifier = Modifier.padding(vertical = 2.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "${step.order}.",
+                                                color = CpaPrimary,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 11.sp,
+                                                fontFamily = FontFamily.Monospace
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "${step.emoji} ${step.labelEn} (${step.labelAr})",
+                                                color = CpaText,
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 11.sp
+                                            )
+                                        }
+                                        Text(
+                                            text = "   ↳ ${step.description}",
+                                            color = CpaTextMuted,
+                                            fontSize = 10.sp,
+                                            modifier = Modifier.padding(bottom = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else if (selectedTab == 2) {
                         // MODE TAB
                         Text("SELECT AUTOMATION MODE", color = CpaTextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
                         Spacer(modifier = Modifier.height(8.dp))
@@ -445,6 +693,7 @@ fun AddTaskDialog(
                                 taskRepeatCount = taskRepeatCountStr.toIntOrNull() ?: 3,
                                 operationRepeatCount = operationRepeatCountStr.toIntOrNull() ?: 1,
                                 completionKeywords = completionKeywords.trim(),
+                                categories = categoriesList.joinToString(", "),
                                 createdAt = taskToEdit?.createdAt ?: System.currentTimeMillis()
                             )
                             onSave(task)

@@ -51,6 +51,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -60,6 +61,7 @@ import com.example.data.model.GeneratedIdentity
 import com.example.data.model.ScriptItem
 import com.example.service.AutomationScriptBuilder
 import com.example.ui.BrowserCommand
+import com.example.ui.theme.CpaAccent
 import com.example.ui.theme.CpaBg
 import com.example.ui.theme.CpaBorder
 import com.example.ui.theme.CpaCard
@@ -102,11 +104,11 @@ fun BrowserScreen(
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
 
     // Autonomous Smart Automation Loop: Continually monitors and executes auto-fill and auto-click
-    LaunchedEffect(webViewRef, identity) {
+    LaunchedEffect(webViewRef, identity, automationState.activeTaskCategories) {
         while (true) {
             delay(1200)
             webViewRef?.let { wv ->
-                wv.evaluateJavascript(AutomationScriptBuilder.buildSmartFormFillScript(identity), null)
+                wv.evaluateJavascript(AutomationScriptBuilder.buildSmartFormFillScript(identity, automationState.activeTaskCategories), null)
             }
         }
     }
@@ -170,6 +172,22 @@ fun BrowserScreen(
                     fontSize = 10.sp,
                     fontWeight = FontWeight.SemiBold,
                     fontFamily = FontFamily.Monospace
+                )
+            }
+
+            // Center AI Plan / Funnel if present
+            if (automationState.activePlanSummary.isNotBlank()) {
+                Text(
+                    text = automationState.activePlanSummary,
+                    color = CpaAccent,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .padding(horizontal = 4.dp)
+                        .weight(1f, fill = false)
                 )
             }
 
@@ -352,8 +370,8 @@ fun BrowserScreen(
                                 }
 
                                 // Inject AFTER-load scripts:
-                                // 1. Smart form filler with active generated identity
-                                view?.evaluateJavascript(AutomationScriptBuilder.buildSmartFormFillScript(identity), null)
+                                // 1. Smart form filler with active generated identity and task categories
+                                view?.evaluateJavascript(AutomationScriptBuilder.buildSmartFormFillScript(identity, automationState.activeTaskCategories), null)
 
                                 // 2. Human behavior simulator
                                 view?.evaluateJavascript(AutomationScriptBuilder.buildHumanBehaviorScript(), null)
@@ -369,7 +387,7 @@ fun BrowserScreen(
 
                                 // 5. Secondary injection delayed for dynamically loaded SPA frameworks (React/Vue/Angular)
                                 postDelayed({
-                                    view?.evaluateJavascript(AutomationScriptBuilder.buildSmartFormFillScript(identity), null)
+                                    view?.evaluateJavascript(AutomationScriptBuilder.buildSmartFormFillScript(identity, automationState.activeTaskCategories), null)
                                 }, 1800)
                             }
 
